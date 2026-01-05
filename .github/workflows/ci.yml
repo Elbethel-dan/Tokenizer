@@ -2,15 +2,15 @@ name: CI
 
 on:
   push:
-    branches:
-      - master
-    tags:
-      - v*
+    branches: [master]
+    tags: [v*]
   pull_request:
-    branches:
-      - master
+    branches: [master]
 
 jobs:
+  # ------------------------------------------------------------
+  # C++ library build & test (fast sanity check)
+  # ------------------------------------------------------------
   build-and-test-cpp:
     name: Build and test C++ library on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -20,22 +20,22 @@ jobs:
         os: [ubuntu-latest, macos-latest]
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Install ICU libraries on macOS
-        if: startsWith(matrix.os, 'macos')
+      - name: Install ICU (macOS)
+        if: runner.os == 'macOS'
         run: brew install icu4c
 
-      - name: Build and install
-        if: startsWith(matrix.os, 'ubuntu')
+      - name: Build & install (Linux)
+        if: runner.os == 'Linux'
         run: |
           cmake -DBUILD_TESTS=ON -DCMAKE_INSTALL_PREFIX=$PWD/install .
-          make install
+          make -j2 install
 
-      - name: Build and install (macOS)
-        if: startsWith(matrix.os, 'macos')
+      - name: Build & install (macOS)
+        if: runner.os == 'macOS'
         run: |
           ICU_PREFIX=$(brew --prefix icu4c)
           cmake \
@@ -43,68 +43,76 @@ jobs:
             -DCMAKE_INSTALL_PREFIX=$PWD/install \
             -DICU_ROOT=$ICU_PREFIX \
             .
-          make install
+          make -j2 install
+
+      - name: Run C++ tests
+        run: test/onmt_tokenizer_test test/data
 
 
-      - name: Test
-        run: |
-          test/onmt_tokenizer_test test/data
-
-
+  # ------------------------------------------------------------
+  # Python style checks
+  # ------------------------------------------------------------
   check-python-style:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install linters
         run: |
-          python -m pip install black==22.* flake8==3.9.* isort==5.*
+          pip install black==22.* flake8==3.9.* isort==5.*
 
-      - name: Check code format with Black
+      - name: Black
         working-directory: bindings/python
-        run: |
-          black --check .
+        run: black --check .
 
-      - name: Check imports order with isort
+      - name: isort
         working-directory: bindings/python
-        run: |
-          isort --check-only .
+        run: isort --check-only .
 
-      - name: Check code style with Flake8
+      - name: Flake8
         working-directory: bindings/python
-        if: ${{ always() }}
-        run: |
-          flake8 .
+        run: flake8 .
 
 
-  build-and-test-python-wheels:
-    name: Build and test wheels on ${{ matrix.os }} for ${{ matrix.arch }}
+  # ------------------------------------------------------------
+  # Build Python wheels
+  # ------------------------------------------------------------
+  build-python-wheels:
+    name: Wheels – ${{ matrix.os }} / ${{ matrix.arch }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-2019]
-        arch: [auto64]
         include:
-        - os: ubuntu-latest
-          arch: aarch64
-        - os: macos-latest
-          arch: arm64
+          # Linux
+          - os: ubuntu-latest
+            arch: x86_64
+          - os: ubuntu-latest
+            arch: aarch64
+
+          # macOS
+          #- os: macos-latest
+          #  arch: x86_64
+          #- os: macos-latest
+          #  arch: arm64
+
+          # Windows
+          - os: windows-2019
+            arch: AMD64
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - uses: docker/setup-qemu-action@v2
-        if: ${{ matrix.arch == 'aarch64' }}
-        name: Set up QEMU
+      - name: Enable QEMU (Linux ARM)
+        if: matrix.arch == 'aarch64'
+        uses: docker/setup-qemu-action@v3
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.11.2
@@ -112,47 +120,78 @@ jobs:
           package-dir: bindings/python
           output-dir: wheelhouse
         env:
-          CIBW_ENVIRONMENT_LINUX: TOKENIZER_ROOT=/project/build/install ICU_ROOT=/project/icu
-          CIBW_ENVIRONMENT_MACOS: TOKENIZER_ROOT=${GITHUB_WORKSPACE}/build/install
-          CIBW_ENVIRONMENT_WINDOWS: TOKENIZER_ROOT=${GITHUB_WORKSPACE}/build/install
-          CIBW_BEFORE_ALL_LINUX: bindings/python/tools/prepare_build_environment_linux.sh
-          CIBW_BEFORE_ALL_MACOS: bindings/python/tools/prepare_build_environment_macos.sh
-          CIBW_BEFORE_ALL_WINDOWS: bash bindings/python/tools/prepare_build_environment_windows.sh
+          # ---- Build selection ----
+          CIBW_BUILD: "cp310-* cp311-* cp312-*"
+          CIBW_SKIP: "pp* *-musllinux_*"
+          CIBW_ARCHS: ${{ matrix.arch }}
+
+          # ---- Dependencies ----
           CIBW_BEFORE_BUILD: pip install pybind11==2.10.1
+
+          # ---- Linux ----
+          CIBW_BEFORE_ALL_LINUX: bindings/python/tools/prepare_build_environment_linux.sh
+          CIBW_ENVIRONMENT_LINUX: |
+            TOKENIZER_ROOT=/project/build/install
+            ICU_ROOT=/project/icu
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
           CIBW_MANYLINUX_AARCH64_IMAGE: manylinux2014
-          CIBW_BUILD: "cp310-* cp311-* cp312-*"
+
+          # ---- macOS ----
+          CIBW_BEFORE_ALL_MACOS: bindings/python/tools/prepare_build_environment_macos.sh
+          CIBW_ENVIRONMENT_MACOS: |
+            TOKENIZER_ROOT=${GITHUB_WORKSPACE}/build/install
+            ICU_ROOT=${GITHUB_WORKSPACE}/icu
+            DYLD_LIBRARY_PATH=${GITHUB_WORKSPACE}/icu/lib:${DYLD_LIBRARY_PATH}
+          CIBW_REPAIR_WHEEL_COMMAND_MACOS: |
+            set -e
+            echo "=== Bundling ICU into wheel ==="
+            delocate-wheel -v -w {dest_dir} {wheel}
+
+            REPAIRED_WHEEL=$(ls {dest_dir}/*.whl)
+            echo "=== Inspecting repaired wheel ==="
+            unzip -q "$REPAIRED_WHEEL" -d /tmp/wheel_check
+            SO_FILE=$(find /tmp/wheel_check -name "_ext*.so" | head -n1)
+            otool -L "$SO_FILE"
+            rm -rf /tmp/wheel_check
+            echo "=== Wheel ready: $REPAIRED_WHEEL ==="
+
+
+
+          # ---- Windows ----
+          CIBW_BEFORE_ALL_WINDOWS: bash bindings/python/tools/prepare_build_environment_windows.sh
+          CIBW_ENVIRONMENT_WINDOWS: TOKENIZER_ROOT=${GITHUB_WORKSPACE}/build/install
+
+          # ---- Tests ----
           CIBW_TEST_COMMAND: pytest {project}/bindings/python/test/test.py
           CIBW_TEST_REQUIRES: pytest
-          CIBW_ARCHS: ${{ matrix.arch }}
-          CIBW_SKIP: pp* *-musllinux_*
-          CIBW_TEST_SKIP: "*-macosx_arm64"
-          CIBW_REPAIR_WHEEL_COMMAND_MACOS: ""
 
-      - name: Upload Python wheels
+      - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
           name: python-wheels-${{ matrix.os }}-${{ matrix.arch }}
           path: wheelhouse
 
 
-  publish-python-wheels-on-pypi:
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
-    needs: [build-and-test-cpp, build-and-test-python-wheels]
+  # ------------------------------------------------------------
+  # Publish to PyPI (API token, no Trusted Publishing)
+  # ------------------------------------------------------------
+  publish-python-wheels:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    needs: [build-and-test-cpp, build-python-wheels]
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download all wheels
+      - name: Download wheels
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
       - name: Collect wheels
         run: |
-          mkdir -p dist
+          mkdir dist
           find artifacts -name "*.whl" -exec cp {} dist/ \;
-          
-      - name: Publish Python wheels to PyPI
+
+      - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist

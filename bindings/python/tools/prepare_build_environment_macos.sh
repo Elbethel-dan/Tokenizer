@@ -1,5 +1,4 @@
-#! /bin/bash
-
+#!/bin/bash
 set -e
 set -x
 
@@ -9,35 +8,34 @@ CMAKE_EXTRA_ARGS=""
 
 mkdir -p "$ICU_ROOT"
 
-# Install ICU via Homebrew
-brew install icu4c
-ICU_PREFIX="$(brew --prefix icu4c)"
+# Copy ICU only if not present
+if [ ! -d "$ICU_ROOT/lib" ]; then
+    brew install icu4c
+    ICU_PREFIX="$(brew --prefix icu4c)"
+    rsync -a "$ICU_PREFIX/" "$ICU_ROOT/"
+fi
 
-# Copy ICU into local prefix
-rsync -a "$ICU_PREFIX/" "$ICU_ROOT/"
+export DYLD_LIBRARY_PATH="$ICU_ROOT/lib:$DYLD_LIBRARY_PATH"
 
-# Remove dynamic libraries to force static linking
-rm -f "$ICU_ROOT/lib/"*.dylib || true
-
-# Explicit Apple Silicon handling
 if [[ "$(uname -m)" == "arm64" ]]; then
     CMAKE_EXTRA_ARGS="-DCMAKE_OSX_ARCHITECTURES=arm64"
 fi
 
-# Install cmake
 pip install cmake
 
-# Build Tokenizer
-rm -rf build
-mkdir build
-cd build
+rm -rf "$ROOT_DIR/build"
+mkdir -p "$ROOT_DIR/build"
+
 cmake \
+  -S "$ROOT_DIR" \
+  -B "$ROOT_DIR/build" \
   -DLIB_ONLY=ON \
+  -DBUILD_SHARED_LIBS=OFF \
   -DICU_ROOT="$ICU_ROOT" \
   -DCMAKE_INSTALL_PREFIX="$ROOT_DIR/build/install" \
-  $CMAKE_EXTRA_ARGS \
-  ..
+  -DCMAKE_MACOSX_RPATH=ON \
+  -DCMAKE_INSTALL_RPATH="$ICU_ROOT/lib" \
+  $CMAKE_EXTRA_ARGS
 
-VERBOSE=1 make -j2 install
-cd "$ROOT_DIR"
+cmake --build "$ROOT_DIR/build" --target install -j2
 

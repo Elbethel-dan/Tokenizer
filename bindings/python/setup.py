@@ -7,6 +7,7 @@ from setuptools import Extension, find_packages, setup
 
 include_dirs = [pybind11.get_include()]
 library_dirs = []
+libraries = ["OpenNMTTokenizer"]
 
 
 def _get_long_description():
@@ -25,26 +26,41 @@ def _get_project_version():
 
 
 def _maybe_add_library_root(lib_name, header_only=False):
-    root = os.environ.get("%s_ROOT" % lib_name)
+    root = os.environ.get(f"{lib_name}_ROOT")
     if root is None:
-        return
+        return None
     include_dirs.append(os.path.join(root, "include"))
     if not header_only:
         for lib_subdir in ("lib64", "lib"):
             lib_dir = os.path.join(root, lib_subdir)
             if os.path.isdir(lib_dir):
                 library_dirs.append(lib_dir)
-                break
+                return lib_dir
+    return None
 
 
 _maybe_add_library_root("TOKENIZER")
+icu_lib_dir = _maybe_add_library_root("ICU")
 
 cflags = ["-std=c++17", "-fvisibility=hidden"]
 ldflags = []
 package_data = {}
+
 if sys.platform == "darwin":
     cflags.append("-mmacosx-version-min=10.14")
-    ldflags.append("-Wl,-rpath,/usr/local/lib")
+    if icu_lib_dir:
+        icu_libs = ["icuuc", "icudata", "icui18n", "icuio"]
+        libraries.extend(icu_libs)
+
+        # Link ICU with full paths so delocate can see it
+        for lib in icu_libs:
+            full_lib_path = os.path.join(icu_lib_dir, f"lib{lib}.dylib")
+            if os.path.isfile(full_lib_path):
+                ldflags.append(full_lib_path)
+
+        # rpath for runtime
+        ldflags.append("-Wl,-rpath,@loader_path/../icu/lib")
+
 elif sys.platform == "win32":
     cflags = ["/std:c++17", "/d2FH4-"]
     package_data["pyonmttok"] = ["*.dll"]
@@ -56,7 +72,7 @@ tokenizer_module = Extension(
     extra_link_args=ldflags,
     include_dirs=include_dirs,
     library_dirs=library_dirs,
-    libraries=["OpenNMTTokenizer"],
+    libraries=libraries,
 )
 
 setup(
@@ -92,7 +108,5 @@ setup(
     packages=find_packages(),
     package_data=package_data,
     python_requires=">=3.10",
-    setup_requires=["pytest-runner"],
-    tests_require=["pytest"],
     ext_modules=[tokenizer_module],
 )
