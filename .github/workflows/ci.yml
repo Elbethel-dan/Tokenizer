@@ -145,7 +145,6 @@ jobs:
           CIBW_REPAIR_WHEEL_COMMAND_MACOS: |
             set -e
             echo "=== Bundling ICU into wheel ==="
-            delocate-wheel -v -w {dest_dir} {wheel}
             delocate-wheel \
               -v \
               --require-archs arm64 \
