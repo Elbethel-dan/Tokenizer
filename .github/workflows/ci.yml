@@ -146,6 +146,12 @@ jobs:
             set -e
             echo "=== Bundling ICU into wheel ==="
             delocate-wheel -v -w {dest_dir} {wheel}
+            delocate-wheel \
+              -v \
+              --require-archs arm64 \
+              --exclude libSystem \
+              -w {dest_dir} \
+              {wheel}
 
             REPAIRED_WHEEL=$(ls {dest_dir}/*.whl)
             echo "=== Inspecting repaired wheel ==="
