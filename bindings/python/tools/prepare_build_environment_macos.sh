@@ -30,7 +30,7 @@ cmake \
   -S "$ROOT_DIR" \
   -B "$ROOT_DIR/build" \
   -DLIB_ONLY=ON \
-  -DBUILD_SHARED_LIBS=OFF \
+  -DBUILD_SHARED_LIBS=ON \
   -DICU_ROOT="$ICU_ROOT" \
   -DCMAKE_INSTALL_PREFIX="$ROOT_DIR/build/install" \
   -DCMAKE_MACOSX_RPATH=ON \
