@@ -38,4 +38,4 @@ cmake \
   $CMAKE_EXTRA_ARGS
 
 cmake --build "$ROOT_DIR/build" --target install -j2
-
+export DYLD_LIBRARY_PATH="$ROOT_DIR/build/install/lib:$DYLD_LIBRARY_PATH"
