@@ -40,7 +40,6 @@ def _maybe_add_library_root(lib_name, header_only=False):
 
 
 _maybe_add_library_root("TOKENIZER")
-icu_lib_dir = _maybe_add_library_root("ICU")
 
 cflags = ["-std=c++17", "-fvisibility=hidden"]
 ldflags = []
@@ -48,19 +47,7 @@ package_data = {}
 
 if sys.platform == "darwin":
     cflags.append("-mmacosx-version-min=10.14")
-    if icu_lib_dir:
-        icu_libs = ["icuuc", "icudata", "icui18n", "icuio"]
-        libraries.extend(icu_libs)
-
-        # Link ICU with full paths so delocate can see it
-        for lib in icu_libs:
-            full_lib_path = os.path.join(icu_lib_dir, f"lib{lib}.dylib")
-            if os.path.isfile(full_lib_path):
-                ldflags.append(full_lib_path)
-
-        # rpath for runtime
-        ldflags.append("-Wl,-rpath,@loader_path/../icu/lib")
-
+    ldflags.append("-Wl,-rpath,/usr/local/lib")
 elif sys.platform == "win32":
     cflags = ["/std:c++17", "/d2FH4-"]
     package_data["pyonmttok"] = ["*.dll"]
@@ -72,7 +59,7 @@ tokenizer_module = Extension(
     extra_link_args=ldflags,
     include_dirs=include_dirs,
     library_dirs=library_dirs,
-    libraries=libraries,
+    libraries=["OpenNMTTokenizer"],
 )
 
 setup(
@@ -108,5 +95,7 @@ setup(
     packages=find_packages(),
     package_data=package_data,
     python_requires=">=3.10",
+    setup_requires=["pytest-runner"],
+    tests_require=["pytest"],
     ext_modules=[tokenizer_module],
 )
