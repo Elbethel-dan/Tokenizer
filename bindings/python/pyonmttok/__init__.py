@@ -4,11 +4,10 @@ if sys.platform == "win32":
     import ctypes
     import glob
     import os
+    from importlib import resources
 
-    import pkg_resources
-
-    module_name = sys.modules[__name__].__name__
-    package_dir = pkg_resources.resource_filename(module_name, "")
+    # Get the package directory safely (no setuptools)
+    package_dir = str(resources.files(__package__))
 
     add_dll_directory = getattr(os, "add_dll_directory", None)
     if add_dll_directory is not None:
@@ -16,7 +15,7 @@ if sys.platform == "win32":
 
     for library in glob.glob(os.path.join(package_dir, "*.dll")):
         ctypes.CDLL(library)
-
+# isort: off
 from pyonmttok._ext import (
     BPELearner,
     Casing,
@@ -31,6 +30,8 @@ from pyonmttok._ext import (
     is_valid_language,
     set_random_seed,
 )
+
+# isort: on
 from pyonmttok.version import __version__
 
 
